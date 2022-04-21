@@ -1,0 +1,157 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  creationTimestamp: '2022-04-14T16:57:04Z'
+  generation: 28
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:finally': {}
+          'f:params': {}
+          'f:resources': {}
+          'f:tasks': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2022-04-14T16:57:04Z'
+  name: rhacs-demo-pipeline
+  namespace: jt-test-project
+  resourceVersion: '20975454'
+  uid: f983af4f-26cc-4256-a765-f5ca33f5271a
+spec:
+  finally:
+    - name: openshift-client
+      params:
+        - name: SCRIPT
+          value: >-
+            oc new-app quay.io/jthompki/quarkus_demo_app:latest -n
+            jt-test-project
+        - name: VERSION
+          value: latest
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+  params:
+    - default: acs-central-endpoint
+      name: acs_central_endpoint
+      type: string
+    - default: acs-access-token
+      name: acs_api_token
+      type: string
+    - default: .
+      name: file-location-in-git-repo
+      type: string
+    - default: 'true'
+      name: recursive-search
+      type: string
+  tasks:
+    - name: git-clone
+      params:
+        - name: url
+          value: 'https://github.com/jthompkins/quarkus_demo_app'
+        - name: submodules
+          value: 'true'
+        - name: depth
+          value: '1'
+        - name: sslVerify
+          value: 'true'
+        - name: deleteExisting
+          value: 'true'
+        - name: verbose
+          value: 'true'
+        - name: gitInitImage
+          value: >-
+            registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8@sha256:da1aedf0b17f2b9dd2a46edc93ff1c0582989414b902a28cd79bad8a035c9ea4
+        - name: userHome
+          value: /tekton/home
+        - name: revision
+          value: noassets
+      taskRef:
+        kind: ClusterTask
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: demo-workspace
+    - name: build-image
+      params:
+        - name: IMAGE
+          value: 'quay.io/jthompki/quarkus_demo_app:latest'
+        - name: BUILDER_IMAGE
+          value: >-
+            registry.redhat.io/rhel8/buildah@sha256:99cae35f40c7ec050fed3765b2b27e0b8bbea2aa2da7c16408e2ca13c60ff8ee
+        - name: STORAGE_DRIVER
+          value: vfs
+        - name: DOCKERFILE
+          value: ./Containerfile
+        - name: CONTEXT
+          value: .
+        - name: TLSVERIFY
+          value: 'true'
+        - name: FORMAT
+          value: oci
+      runAfter:
+        - maven-package
+      taskRef:
+        kind: ClusterTask
+        name: buildah
+      workspaces:
+        - name: source
+          workspace: demo-workspace
+    - name: maven-package
+      params:
+        - name: MAVEN_IMAGE
+          value: >-
+            gcr.io/cloud-builders/mvn@sha256:57523fc43394d6d9d2414ee8d1c85ed7a13460cbb268c3cd16d28cfb3859e641
+        - name: GOALS
+          value:
+            - package
+        - name: PROXY_PROTOCOL
+          value: http
+        - name: CONTEXT_DIR
+          value: .
+      runAfter:
+        - git-clone
+      taskRef:
+        kind: ClusterTask
+        name: maven
+      workspaces:
+        - name: source
+          workspace: demo-workspace
+        - name: maven-settings
+          workspace: demo-workspace
+    - name: resource-deployment-check
+      params:
+        - name: acs_central_endpoint
+          value: $(params.acs_central_endpoint)
+        - name: acs_api_token
+          value: $(params.acs_api_token)
+        - name: source_location
+          value: $(params.file-location-in-git-repo)
+        - name: recursive-search
+          value: $(params.recursive-search)
+      runAfter:
+        - build-image
+      taskRef:
+        kind: Task
+        name: acs-deployment-check
+      workspaces:
+        - name: files
+          workspace: demo-workspace
+    - name: rox-image-check
+      params:
+        - name: acs_central_endpoint
+          value: $(params.acs_central_endpoint)
+        - name: image
+          value: 'quay.io/jthompki/quarkus_demo_app:latest'
+        - name: acs_api_token
+          value: $(params.acs_api_token)
+      runAfter:
+        - build-image
+      taskRef:
+        kind: ClusterTask
+        name: rox-image-check
+  workspaces:
+    - name: demo-workspace

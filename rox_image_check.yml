@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1beta1
+kind: ClusterTask
+metadata:
+  creationTimestamp: '2022-04-20T14:08:57Z'
+  generation: 5
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:params': {}
+          'f:results': {}
+          'f:steps': {}
+      manager: Mozilla
+      operation: Update
+      time: '2022-04-20T14:08:57Z'
+  name: rox-image-check
+  resourceVersion: '20820455'
+  uid: 064d37df-0c6e-4d3b-9ace-a25338686c95
+spec:
+  params:
+    - description: >-
+        Secret containing the address:port tuple for StackRox Central (example -
+        rox.stackrox.io:443)
+      name: acs_central_endpoint
+      type: string
+    - description: Secret containing the StackRox API token with CI permissions
+      name: acs_api_token
+      type: string
+    - description: 'Full name of image to scan (example -- gcr.io/rox/sample:5.0-rc1)'
+      name: image
+      type: string
+  results:
+    - description: Output of `roxctl image check`
+      name: check_output
+  steps:
+    - env:
+        - name: ROX_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: acs_api_token
+              name: $(params.acs_api_token)
+        - name: ROX_CENTRAL_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              key: acs_central_endpoint
+              name: $(params.acs_central_endpoint)
+      image: 'registry.access.redhat.com/ubi8/ubi-minimal:latest'
+      name: rox-image-check
+      resources: {}
+      script: >-
+        #!/usr/bin/env bash
+
+        set +x
+
+        curl -k -L -H "Authorization: Bearer $ROX_API_TOKEN"
+        https://$ROX_CENTRAL_ENDPOINT/api/cli/download/roxctl-linux --output
+        ./roxctl  > /dev/null; echo "Getting roxctl"
+
+        chmod +x ./roxctl  > /dev/null
+
+        ./roxctl image check --insecure-skip-tls-verify -e $ROX_CENTRAL_ENDPOINT
+        --image $(params.image)
